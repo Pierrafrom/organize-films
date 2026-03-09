@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+SCRIPT="C:/Users/pierr/Code/Scripts/Powershell/organize-films/organize_films.py"
+DIR="$(cd "$(dirname "$0")" && pwd)"
+python "$SCRIPT" "$DIR" "${1:---dry-run}"

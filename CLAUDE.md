@@ -1,56 +1,30 @@
-# Vidéothèque Organizer
+# organize-films — project context
 
-## Objectif
+Stdlib-only Python CLI that renames a film library into a strict layout.
+Start with [README.md](README.md); the two docs it links are the source
+of truth for behavior ([docs/naming-convention.md](docs/naming-convention.md))
+and design ([docs/architecture.md](docs/architecture.md)).
 
-Script Python pour renommer et organiser automatiquement une bibliothèque de films.
+## Constraints specific to this project
 
-## Conventions de nommage (à respecter strictement)
+- **Runtime dependencies stay empty** (`dependencies = []`): the tool must
+  install with `uv tool install` on any machine with nothing but Python.
+  Dev tooling is fine in the `dev` dependency group.
+- **Never delete, never overwrite.** Only `executor.py` writes to disk,
+  and only via `shutil.move` onto a destination verified free. Any new
+  feature must keep that property — there is no `unlink`/`rmtree` anywhere.
+- **Plan first.** New behavior is a decision recorded in `Plan` by
+  `LibraryPlanner`, then applied by `PlanExecutor`; never a direct
+  filesystem call from the planner or the CLI.
+- **Every parsing change is checked against the real names** in
+  `tests/test_naming.py::REAL_LIBRARY_NAMES` — extend that list rather
+  than writing synthetic cases when a new real-world name breaks.
+- Windows is the primary target: `WindowsPath.__eq__` is case-insensitive
+  (compare `str()` for case-only renames) and the console may be cp1252
+  (the CLI reconfigures stdout to UTF-8).
 
-### Structure des dossiers
+## Git
 
-```
-Films/
-└── Titre du Film (Année)/
-    ├── Titre du Film (Année) [Qualité].mkv
-    └── Subs/
-            Titre du Film (Année).fr.srt
-            Titre du Film (Année).en.srt
-            Titre du Film (Année).nfo
-```
-
-### Cas spéciaux
-
-- **Collections** : `Titre (Collection)/Titre (Année)/...`
-- **Extras** : sous-dossier `Extras/` dans le dossier du film
-- **Featurettes** : sous-dossier `Featurettes/` dans le dossier du film
-
-### Règles
-
-- Toujours un dry-run d'abord (--dry-run flag)
-- Logger toutes les opérations dans rename_log.txt
-- Ne jamais supprimer de fichiers, seulement déplacer/renommer
-- Conserver les fichiers .nfo dans Subs/
-- Langues reconnues : .fr .en .pt-BR .es
-- le script doit prendre en paramètre le chemin de la bibliothèque à organiser
-
-## Stack
-
-- Python 3, stdlib uniquement (pas de dépendances externes)
-- Compatible Windows (chemins avec os.path)
-
-## Conventions Git & GitHub
-
-### Structure de branches
-
-- main : production stable uniquement
-- develop : intégration
-- feature/\* : nouvelles fonctionnalités
-- fix/\* : corrections
-
-### README template
-
-Toujours inclure : description, badges, installation, usage, structure du projet, licence
-
-### Commits
-
-Utiliser Conventional Commits : feat:, fix:, docs:, chore:, refactor:
+`main` = releases only, `develop` = integration, `feature/*` / `fix/*`
+branches, Conventional Commits (`feat:`, `fix:`, `docs:`, `chore:`,
+`refactor:`, `test:`).

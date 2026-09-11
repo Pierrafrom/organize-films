@@ -1,19 +1,22 @@
 # Python
 __pycache__/
 *.py[cod]
-*.pyo
-*.pyd
-.Python
 *.egg-info/
 dist/
 build/
-.eggs/
+.venv/
 
-# Mypy
+# Tooling caches
 .mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+.codegraph/
 
-# Logs
-rename_log.txt
+# Logs (the default log lives in the user state dir; this covers --log-file)
+logs/
+*.jsonl
 
 # OS
 .DS_Store
@@ -25,5 +28,5 @@ Thumbs.db
 *.swp
 *.swo
 
-# Claude
+# Claude Code local settings
 .claude/

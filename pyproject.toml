@@ -1,0 +1,104 @@
+[project]
+name = "organize-films"
+version = "1.0.0"
+description = "Rename and organize a film library into a strict, media-server-friendly layout."
+readme = "README.md"
+license = "MIT"
+authors = [{ name = "Pierre Fromont Boissel" }]
+requires-python = ">=3.11"
+# Runtime is stdlib-only by design (see CLAUDE.md) — keep this list empty.
+dependencies = []
+classifiers = [
+    "Environment :: Console",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Multimedia :: Video",
+]
+
+[project.urls]
+Repository = "https://github.com/Pierrafrom/organize-films"
+
+[project.scripts]
+organize-films = "organize_films.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.8.22,<0.9.0"]
+build-backend = "uv_build"
+
+# Managed with uv: `uv sync` to install, `uv add --dev <pkg>` to add a tool —
+# never edit this list by hand and forget `uv.lock`.
+[dependency-groups]
+dev = [
+    "ruff",
+    "mypy",
+    "pytest",
+    "pytest-cov",
+    "mdformat",
+    "mdformat-gfm",
+    "pre-commit",
+]
+
+# ---- Ruff: lint + format + imports + modernization, a single tool ----
+# Base: docs.astral.sh/ruff/rules/ — extend-select on top of ruff's default
+# baseline (E4, E7, E9, F), never `select` from scratch. Snapshot of
+# ~/Code/claude-code-config/examples/pyproject.toml as of 2026-09-11; watch
+# github.com/astral-sh/ruff releases for category changes.
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+extend-select = [
+    "E", "W",   # pycodestyle
+    "F",        # pyflakes (dead code, unused imports)
+    "I",        # isort (import sorting)
+    "N",        # pep8-naming
+    "UP",       # pyupgrade (modern syntax)
+    "B",        # bugbear (common bugs)
+    "SIM",      # simplify
+    "C90",      # cyclomatic complexity
+    "ARG",      # unused arguments
+    "RET",      # return consistency
+    "PTH",      # pathlib rather than os.path
+    "LOG",      # logging module best practices
+    "D",        # pydocstyle (Google convention, see docs/)
+    "TID",      # tidy-imports (bans relative imports)
+    "ANN",      # flake8-annotations (pairs with mypy --strict)
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Test names are descriptive (test_<behavior>_<condition>); no docstring or
+# annotation required, and unused fixture arguments are the pytest idiom.
+# E501: real-world release names used as fixtures cannot be wrapped.
+"tests/*" = ["D", "ANN", "ARG", "E501"]
+"__init__.py" = ["D104"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+# ---- Pytest ----
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --cov=organize_films --cov-report=term-missing --cov-fail-under=80"
+
+# ---- Mypy: strict baseline (mypy.readthedocs.io/en/stable/config_file.html) ----
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_return_any = true
+warn_unused_ignores = true
+warn_unused_configs = true
+ignore_missing_imports = true
+files = ["src", "tests"]

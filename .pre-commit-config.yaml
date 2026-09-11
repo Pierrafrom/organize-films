@@ -1,0 +1,26 @@
+# Hook revisions pinned by `uv run pre-commit autoupdate` — rerun it to bump.
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.7
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/executablebooks/mdformat
+    rev: 1.0.0
+    hooks:
+      - id: mdformat
+        additional_dependencies: [mdformat-gfm]
+
+  # Local hook rather than pre-commit/mirrors-mypy: the mirror runs mypy in an
+  # isolated venv without the project's environment, so it silently degrades to
+  # ignore_missing_imports for every dependency. `uv run` uses the real one.
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy
+        entry: uv run mypy
+        language: system
+        pass_filenames: false
+        types: [python]

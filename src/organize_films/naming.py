@@ -157,7 +157,7 @@ def _match_spaced_title_dotted_tail(stem: str) -> ParsedMediaName | None:
 
 def _match_dotted(stem: str) -> ParsedMediaName | None:
     # `Title.Title.Year.Quality-GROUP` — the scene convention.
-    if stem.count(".") < 3 or stem.count(".") < stem.count(" "):
+    if stem.count(".") < 2 or stem.count(".") < stem.count(" "):
         return None
     match = _DOTTED_YEAR.search(stem) or _ANY_YEAR.search(stem)
     if match is None:
@@ -173,7 +173,7 @@ def _match_free_form(stem: str) -> ParsedMediaName | None:
     match = _PARENTHESIZED_YEAR.search(stem) or _ANY_YEAR.search(stem)
     if match is None:
         return None
-    title = _collapse_spaces(stem[: match.start()]).rstrip("(").strip()
+    title = _collapse_spaces(stem[: match.start()]).rstrip("(.-_ ")
     quality = stem[match.end() :].strip().lstrip(")").strip()
     return _parsed(title, match.group(1), quality)
 

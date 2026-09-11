@@ -11,7 +11,8 @@ and design ([docs/architecture.md](docs/architecture.md)).
   install with `uv tool install` on any machine with nothing but Python.
   Dev tooling is fine in the `dev` dependency group.
 - **Never delete, never overwrite.** Only `executor.py` writes to disk,
-  and only via `shutil.move` onto a destination verified free. Any new
+  and only via `Path.rename` onto a destination verified free (never
+  `shutil.move`: its copy fallback duplicates locked files). Any new
   feature must keep that property — there is no `unlink`/`rmtree` anywhere.
 - **Plan first.** New behavior is a decision recorded in `Plan` by
   `LibraryPlanner`, then applied by `PlanExecutor`; never a direct

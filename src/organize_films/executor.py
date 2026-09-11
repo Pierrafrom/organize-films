@@ -7,7 +7,6 @@ source stays where it is.
 
 import logging
 import os
-import shutil
 from dataclasses import dataclass
 
 from organize_films.operations import FileOperation, Plan, Skip, SkipReason
@@ -61,7 +60,11 @@ class PlanExecutor:
             return Skip(source, SkipReason.DESTINATION_TAKEN)
         try:
             destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.move(source, destination)
+            # rename, not shutil.move: the latter silently falls back to
+            # copy + delete when the source is locked, leaving a duplicate
+            # of a multi-gigabyte file behind. A library lives on one volume,
+            # so an atomic rename is always the right tool.
+            source.rename(destination)
         except OSError as error:
             logger.error(
                 "filesystem error", extra={"ctx": {**ctx, "error": str(error)}}

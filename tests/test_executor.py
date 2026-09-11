@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from conftest import BuildLibrary
 from organize_films.executor import PlanExecutor
 from organize_films.operations import Plan, SkipReason
@@ -109,3 +111,20 @@ def test_case_only_rename_is_applied(build_library: BuildLibrary) -> None:
     PlanExecutor(LibraryPlanner(root).plan()).apply()
 
     assert all_files(root) == {"Film (2000)/Subs/Film (2000).fr.srt"}
+
+
+def test_locked_source_is_never_copied(
+    build_library: BuildLibrary, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = build_library(["locked.2001.mkv"])
+    plan = LibraryPlanner(root).plan()
+
+    def _refuse(self: Path, target: Path) -> Path:
+        raise PermissionError(32, "file in use by another process")
+
+    monkeypatch.setattr(Path, "rename", _refuse)
+
+    result = PlanExecutor(plan).apply()
+
+    assert [f.reason for f in result.failed] == [SkipReason.FILESYSTEM_ERROR]
+    assert all_files(root) == {"locked.2001.mkv"}

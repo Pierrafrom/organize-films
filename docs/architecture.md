@@ -66,10 +66,14 @@ The executor re-checks `exists()` right before each move as a last guard.
 
 ### Never delete, never overwrite
 
-`PlanExecutor` only calls `shutil.move` on a destination it has just
-verified to be free, and creates parent folders on demand. There is no
-code path that removes a file; a failed operation is reported and the
-source stays in place.
+`PlanExecutor` only calls `Path.rename` on a destination it has just
+verified to be free, and creates parent folders on demand. It deliberately
+avoids `shutil.move`: when a source is locked (a file still being
+downloaded, for instance) `shutil.move` falls back to copy + delete, the
+delete fails, and a multi-gigabyte duplicate is left behind — observed on
+the very first real run. A rename is atomic on a single volume: it either
+happens or it does not. There is no code path that removes a file; a
+failed operation is reported and the source stays in place.
 
 ### Log location
 

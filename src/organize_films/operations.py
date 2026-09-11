@@ -22,6 +22,7 @@ class SkipReason(StrEnum):
     UNKNOWN_SUBDIRECTORY = "unexpected sub-folder inside a film folder"
     ORPHAN_FILE = "subtitle or nfo without a film folder"
     DESTINATION_TAKEN = "destination already exists or is claimed by another entry"
+    FILESYSTEM_ERROR = "the filesystem refused the operation"
 
 
 @dataclass(frozen=True, slots=True)

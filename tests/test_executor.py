@@ -113,14 +113,14 @@ def test_case_only_rename_is_applied(build_library: BuildLibrary) -> None:
     assert all_files(root) == {"Film (2000)/Subs/Film (2000).fr.srt"}
 
 
-def test_locked_source_is_never_copied(
+def test_permission_error_without_a_lock_signature_is_a_real_failure(
     build_library: BuildLibrary, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     root = build_library(["locked.2001.mkv"])
     plan = LibraryPlanner(root).plan()
 
     def _refuse(self: Path, target: Path) -> Path:
-        raise PermissionError(32, "file in use by another process")
+        raise PermissionError(13, "access denied")  # no winerror: a real error
 
     monkeypatch.setattr(Path, "rename", _refuse)
 
@@ -128,3 +128,20 @@ def test_locked_source_is_never_copied(
 
     assert [f.reason for f in result.failed] == [SkipReason.FILESYSTEM_ERROR]
     assert all_files(root) == {"locked.2001.mkv"}
+
+
+def test_file_locked_after_planning_is_reported_as_file_locked_not_an_error(
+    build_library: BuildLibrary, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = build_library(["still-downloading.2001.mkv"])
+    plan = LibraryPlanner(root).plan()
+
+    def _sharing_violation(self: Path, target: Path) -> Path:
+        raise OSError(13, "used by another process", str(self), 32)
+
+    monkeypatch.setattr(Path, "rename", _sharing_violation)
+
+    result = PlanExecutor(plan).apply()
+
+    assert [f.reason for f in result.failed] == [SkipReason.FILE_LOCKED]
+    assert all_files(root) == {"still-downloading.2001.mkv"}

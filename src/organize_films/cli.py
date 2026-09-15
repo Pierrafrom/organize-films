@@ -10,7 +10,7 @@ from pathlib import Path
 
 from organize_films.executor import PlanExecutor
 from organize_films.logging_config import configure_logging, default_log_path
-from organize_films.operations import Plan
+from organize_films.operations import Plan, Skip, SkipReason
 from organize_films.planner import LibraryPlanner
 
 LIBRARY_ENV_VAR = "ORGANIZE_FILMS_LIBRARY"
@@ -90,29 +90,55 @@ def _confirm(operation_count: int) -> bool:
     return answer in _YES_ANSWERS
 
 
+def _split_locked(skips: Sequence[Skip]) -> tuple[list[Skip], list[Skip]]:
+    locked = [s for s in skips if s.reason is SkipReason.FILE_LOCKED]
+    others = [s for s in skips if s.reason is not SkipReason.FILE_LOCKED]
+    return locked, others
+
+
 def _report_plan(plan: Plan) -> None:
+    downloading, other_skips = _split_locked(plan.skips)
     logger.info("")
     logger.info(
-        "Planned: %d operation(s), %d skipped.",
+        "Planned: %d operation(s), %d still downloading, %d skipped.",
         len(plan.operations),
-        len(plan.skips),
-        extra={"ctx": {"operations": len(plan.operations), "skips": len(plan.skips)}},
+        len(downloading),
+        len(other_skips),
+        extra={
+            "ctx": {
+                "operations": len(plan.operations),
+                "downloading": len(downloading),
+                "skips": len(other_skips),
+            }
+        },
     )
-    for skip in plan.skips:
+    for skip in downloading:
+        logger.info("  waiting  %s  (%s)", plan.relative(skip.path), skip.reason)
+    for skip in other_skips:
         logger.warning("  skipped  %s  (%s)", plan.relative(skip.path), skip.reason)
 
 
 def _apply(plan: Plan) -> int:
     result = PlanExecutor(plan).apply()
+    downloading, real_failures = _split_locked(result.failed)
     logger.info(
-        "Applied %d operation(s), %d failed.",
+        "Applied %d operation(s), %d still downloading, %d failed.",
         result.applied,
-        len(result.failed),
-        extra={"ctx": {"applied": result.applied, "failed": len(result.failed)}},
+        len(downloading),
+        len(real_failures),
+        extra={
+            "ctx": {
+                "applied": result.applied,
+                "downloading": len(downloading),
+                "failed": len(real_failures),
+            }
+        },
     )
-    for failure in result.failed:
+    for skip in downloading:
+        logger.info("  waiting  %s  (%s)", plan.relative(skip.path), skip.reason)
+    for failure in real_failures:
         logger.error("  failed  %s  (%s)", plan.relative(failure.path), failure.reason)
-    return EXIT_APPLY_FAILED if result.failed else EXIT_OK
+    return EXIT_APPLY_FAILED if real_failures else EXIT_OK
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -122,8 +148,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         argv: Arguments without the program name; ``None`` reads ``sys.argv``.
 
     Returns:
-        ``0`` on success or cancellation, ``1`` if some operation failed.
-        Usage errors exit with ``2`` through ``argparse``.
+        ``0`` on success, cancellation, or when the only obstacle is a file
+        still downloading; ``1`` if some other operation failed. Usage
+        errors exit with ``2`` through ``argparse``.
     """
     parser = _build_parser()
     args = parser.parse_args(argv)

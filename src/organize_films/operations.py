@@ -22,6 +22,7 @@ class SkipReason(StrEnum):
     UNKNOWN_SUBDIRECTORY = "unexpected sub-folder inside a film folder"
     ORPHAN_FILE = "subtitle or nfo without a film folder"
     DESTINATION_TAKEN = "destination already exists or is claimed by another entry"
+    FILE_LOCKED = "file is open by another process (likely still downloading)"
     FILESYSTEM_ERROR = "the filesystem refused the operation"
 
 
@@ -101,9 +102,16 @@ class Plan:
         )
 
     def skip(self, path: Path, reason: SkipReason) -> None:
-        """Record that ``path`` is left untouched because of ``reason``."""
+        """Record that ``path`` is left untouched because of ``reason``.
+
+        A locked file (still downloading) is expected and retried
+        automatically on the next run, so it is logged at INFO rather than
+        the WARNING level used for every other reason.
+        """
         self.skips.append(Skip(path, reason))
-        logger.warning(
+        level = logging.INFO if reason is SkipReason.FILE_LOCKED else logging.WARNING
+        logger.log(
+            level,
             "  skip    %s  (%s)",
             self.relative(path),
             reason,

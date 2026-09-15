@@ -12,6 +12,7 @@ from organize_films.constants import (
     SUBTITLES_DIRECTORY,
     VIDEO_EXTENSIONS,
 )
+from organize_films.locks import is_locked_for_writing
 from organize_films.naming import (
     FilmIdentity,
     parse_media_name,
@@ -37,8 +38,10 @@ def _is_collection(folder: Path) -> bool:
 class LibraryPlanner:
     """Compute the operations bringing a library to the naming convention.
 
-    The planner never touches the disk: it only reads the tree and records
-    decisions in a :class:`~organize_films.operations.Plan`.
+    The planner never writes to the disk: it only reads the tree (including
+    a non-mutating probe of whether a video is still locked by another
+    process) and records decisions in a
+    :class:`~organize_films.operations.Plan`.
     """
 
     def __init__(self, library: Path) -> None:
@@ -71,6 +74,9 @@ class LibraryPlanner:
 
     def _plan_loose_video(self, file: Path, plan: Plan) -> None:
         logger.info("file  %s", file.name)
+        if is_locked_for_writing(file):
+            plan.skip(file, SkipReason.FILE_LOCKED)
+            return
         parsed = parse_media_name(file.name)
         if parsed is None:
             plan.skip(file, SkipReason.YEAR_NOT_FOUND)
@@ -129,6 +135,9 @@ class LibraryPlanner:
     def _plan_video(
         self, video: Path, identity: FilmIdentity, folder_quality: str, plan: Plan
     ) -> None:
+        if is_locked_for_writing(video):
+            plan.skip(video, SkipReason.FILE_LOCKED)
+            return
         parsed = parse_media_name(video.name)
         quality = (
             parsed.quality if parsed is not None and parsed.quality else folder_quality

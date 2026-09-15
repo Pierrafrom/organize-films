@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from conftest import BuildLibrary
 from organize_films.operations import FileOperation, Plan, SkipReason
 from organize_films.planner import LibraryPlanner
@@ -296,3 +298,44 @@ def test_file_operation_distinguishes_rename_from_move(tmp_path: Path) -> None:
 
     assert rename.is_rename
     assert not move.is_rename
+
+
+def _lock_only(locked_name: str) -> object:
+    def _is_locked(path: Path) -> bool:
+        return path.name == locked_name
+
+    return _is_locked
+
+
+def test_loose_video_still_downloading_is_skipped_without_creating_a_folder(
+    build_library: BuildLibrary, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = build_library(["The.Fugitive.1993.2160p.Remux-GROUP.mkv"])
+    monkeypatch.setattr(
+        "organize_films.planner.is_locked_for_writing",
+        _lock_only("The.Fugitive.1993.2160p.Remux-GROUP.mkv"),
+    )
+
+    plan = plan_for(root)
+
+    assert plan.is_empty
+    assert [s.reason for s in plan.skips] == [SkipReason.FILE_LOCKED]
+    assert not (root / "The Fugitive (1993)").exists()
+
+
+def test_video_still_downloading_inside_a_folder_is_skipped_but_folder_still_renamed(
+    build_library: BuildLibrary, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    folder = "The.Fugitive.1993.2160p.Remux-GROUP"
+    root = build_library([f"{folder}/{folder}.mkv", f"{folder}/{folder}.nfo"])
+    monkeypatch.setattr(
+        "organize_films.planner.is_locked_for_writing", _lock_only(f"{folder}.mkv")
+    )
+
+    plan = plan_for(root)
+
+    assert moves(plan) == [
+        (f"{folder}/{folder}.nfo", f"{folder}/Subs/The Fugitive (1993).nfo"),
+        (folder, "The Fugitive (1993)"),
+    ]
+    assert [s.reason for s in plan.skips] == [SkipReason.FILE_LOCKED]

@@ -94,3 +94,13 @@ it is never renamed to a guessed language.
   entries would map to the same destination, the later one is skipped and
   reported in the preview.
 - `Extras/` and `Featurettes/` contents are never parsed or renamed.
+
+## A video still downloading
+
+A video another process still has open (a browser or torrent client
+writing to it) is skipped with "file is open by another process (likely
+still downloading)" — it is never moved partway, and no partial copy is
+ever left behind. This is a normal, expected outcome, not an error: it
+does not block the rest of the run and does not affect the exit code.
+Simply run the command again once the download finishes; the file is
+picked up automatically, with no manual cleanup needed.

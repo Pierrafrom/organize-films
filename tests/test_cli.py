@@ -157,6 +157,33 @@ def test_apply_failures_return_exit_code_one(
     assert code == 1
 
 
+def test_file_still_downloading_does_not_fail_the_run(
+    build_library: BuildLibrary,
+    log_file: Path,
+    no_prompt: None,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    root = build_library(MESSY)
+
+    class DownloadingExecutor:
+        def __init__(self, plan: Plan) -> None:
+            self._plan = plan
+
+        def apply(self) -> ExecutionResult:
+            skip = Skip(self._plan.operations[0].source, SkipReason.FILE_LOCKED)
+            return ExecutionResult(
+                applied=len(self._plan.operations) - 1, failed=(skip,)
+            )
+
+    monkeypatch.setattr(cli, "PlanExecutor", DownloadingExecutor)
+
+    code = cli.main([str(root), "--yes", "--log-file", str(log_file)])
+
+    assert code == 0
+    assert "still downloading" in capsys.readouterr().out
+
+
 def test_module_entry_point_delegates_to_main(monkeypatch: pytest.MonkeyPatch) -> None:
     import runpy
 

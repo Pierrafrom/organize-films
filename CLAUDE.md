@@ -15,8 +15,15 @@ and design ([docs/architecture.md](docs/architecture.md)).
   `shutil.move`: its copy fallback duplicates locked files). Any new
   feature must keep that property — there is no `unlink`/`rmtree` anywhere.
 - **Plan first.** New behavior is a decision recorded in `Plan` by
-  `LibraryPlanner`, then applied by `PlanExecutor`; never a direct
-  filesystem call from the planner or the CLI.
+  `LibraryPlanner`, then applied by `PlanExecutor`; the planner may only
+  *read* the filesystem to decide (existence checks, `locks.py`'s
+  non-mutating lock probe) — no write, move, or delete outside `executor.py`.
+- **A file still downloading is a skip, not a failure.** `locks.py`
+  detects a source locked by another process (WinError 32) both at plan
+  time and as an apply-time race-condition guard; it becomes
+  `SkipReason.FILE_LOCKED`, logged at INFO, and never turns the CLI's exit
+  code to `1`. Don't fold it into `FILESYSTEM_ERROR` — that reason is for
+  failures that need the user's attention.
 - **Every parsing change is checked against the real names** in
   `tests/test_naming.py::REAL_LIBRARY_NAMES` — extend that list rather
   than writing synthetic cases when a new real-world name breaks.

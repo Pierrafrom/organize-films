@@ -9,6 +9,7 @@ import logging
 import os
 from dataclasses import dataclass
 
+from organize_films.locks import SHARING_VIOLATION_WINERROR
 from organize_films.operations import FileOperation, Plan, Skip, SkipReason
 
 logger = logging.getLogger(__name__)
@@ -16,7 +17,13 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True, slots=True)
 class ExecutionResult:
-    """Outcome of applying a plan: how many operations ran, and which did not."""
+    """Outcome of applying a plan: how many operations ran, and which did not.
+
+    ``failed`` mixes two different situations: a file that started
+    downloading after it was planned (``SkipReason.FILE_LOCKED``, expected,
+    retried automatically next run) and a genuine failure. Callers that care
+    about the distinction filter on ``reason``.
+    """
 
     applied: int
     failed: tuple[Skip, ...]
@@ -26,6 +33,10 @@ def _is_case_only_rename(operation: FileOperation) -> bool:
     return os.path.normcase(str(operation.source)) == os.path.normcase(
         str(operation.destination)
     )
+
+
+def _is_sharing_violation(error: OSError) -> bool:
+    return getattr(error, "winerror", None) == SHARING_VIOLATION_WINERROR
 
 
 class PlanExecutor:
@@ -66,6 +77,11 @@ class PlanExecutor:
             # so an atomic rename is always the right tool.
             source.rename(destination)
         except OSError as error:
+            if _is_sharing_violation(error):
+                # Started downloading again after planning: expected, not a
+                # real failure — the next run picks it up once it is free.
+                logger.info("locked at apply time", extra={"ctx": ctx})
+                return Skip(source, SkipReason.FILE_LOCKED)
             logger.error(
                 "filesystem error", extra={"ctx": {**ctx, "error": str(error)}}
             )

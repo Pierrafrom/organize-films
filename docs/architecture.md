@@ -33,6 +33,7 @@ flowchart LR
 | `quality.py`        | quality token vocabulary and `extract_quality()`                                         | no                        |
 | `naming.py`         | `FilmIdentity` (owns canonical names), `parse_media_name()`, `parse_subtitle_language()` | no                        |
 | `operations.py`     | `FileOperation`, `Skip`, `SkipReason` value objects and the `Plan` that collects them    | reads only (`exists()`)   |
+| `locks.py`          | `is_locked_for_writing()`: detects a file another process still has open                 | opens + closes only       |
 | `planner.py`        | `LibraryPlanner`: walks the tree and fills a `Plan`                                      | reads only                |
 | `executor.py`       | `PlanExecutor`: applies a `Plan`, returns an `ExecutionResult`                           | **yes** — the only writer |
 
@@ -74,6 +75,22 @@ delete fails, and a multi-gigabyte duplicate is left behind — observed on
 the very first real run. A rename is atomic on a single volume: it either
 happens or it does not. There is no code path that removes a file; a
 failed operation is reported and the source stays in place.
+
+### A file still downloading is a skip, not a failure
+
+A multi-gigabyte video is often still being written by a download client
+when the library is scanned. `locks.is_locked_for_writing()` probes this
+*before* planning a move (open read-write, close immediately, no data
+touched): if Windows refuses with `ERROR_SHARING_VIOLATION` (WinError 32),
+the file becomes a `Skip(FILE_LOCKED)` instead of a planned operation, so
+the dry run never promises a move that would fail. `PlanExecutor` applies
+the same classification as a race-condition guard, for a file that starts
+downloading again between planning and applying. Either way `FILE_LOCKED`
+is logged at INFO and, unlike every other failure, never turns the CLI's
+exit code to `1` — it is expected, and the next run picks the file up
+automatically once it is free. A destination that already exists on disk
+for another reason is still `DESTINATION_TAKEN`, reported and left alone
+like any other real conflict.
 
 ### Log location
 

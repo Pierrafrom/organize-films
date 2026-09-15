@@ -224,11 +224,23 @@ def parse_media_name(name: str) -> ParsedMediaName | None:
     return None
 
 
+def _language_from_last_segment(stem: str, separator: str) -> str | None:
+    last_segment = stem.rsplit(separator, 1)[-1].lower()
+    for language in KNOWN_LANGUAGES_LONGEST_FIRST:
+        if last_segment == language.lower():
+            return language
+    return LANGUAGE_ALIASES.get(last_segment)
+
+
 def parse_subtitle_language(filename: str) -> str | None:
     """Extract the canonical language code from a subtitle file name.
 
-    Recognizes ``.fr.srt``-style suffixes, ``_fr`` separators, ISO 639-2 codes
-    (``fre`` -> ``fr``) and full names (``Francais``, ``english``).
+    Recognizes ``.fr.srt``-style suffixes, ``_fr`` and ``-fr`` separators,
+    ISO 639-2 codes (``fre`` -> ``fr``) and full names (``Francais``,
+    ``english``). The dot-separated form is tried first since it is the
+    unambiguous, canonical one; the hyphen-separated fallback is tried last
+    because a hyphen also shows up inside ordinary release tags
+    (``WEB-DL``), so it is only trusted once nothing else has matched.
 
     Args:
         filename: Subtitle file name, with or without directory.
@@ -236,20 +248,20 @@ def parse_subtitle_language(filename: str) -> str | None:
     Returns:
         A code from :data:`organize_films.constants.KNOWN_LANGUAGES`, or ``None``.
     """
-    normalized = Path(filename).stem.replace("_", ".")
+    stem = Path(filename).stem
+    dotted = stem.replace("_", ".")
     for language in KNOWN_LANGUAGES_LONGEST_FIRST:
-        if normalized.lower().endswith("." + language.lower()):
+        if dotted.lower().endswith("." + language.lower()):
+            logger.debug(
+                "parsed subtitle language",
+                extra={"ctx": {"file": filename, "via": "dot", "language": language}},
+            )
             return language
-    last_segment = normalized.rsplit(".", 1)[-1].lower()
-    language_from_alias = LANGUAGE_ALIASES.get(last_segment)
+    alias_match = _language_from_last_segment(
+        dotted, "."
+    ) or _language_from_last_segment(stem, "-")
     logger.debug(
         "parsed subtitle language",
-        extra={
-            "ctx": {
-                "file": filename,
-                "segment": last_segment,
-                "language": language_from_alias,
-            }
-        },
+        extra={"ctx": {"file": filename, "via": "alias", "language": alias_match}},
     )
-    return language_from_alias
+    return alias_match

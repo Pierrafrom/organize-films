@@ -179,6 +179,15 @@ def test_parse_media_name_title_cases_dotted_names_but_keeps_acronyms() -> None:
         ("Movie.spa.sub", "es"),
         ("Ordinary People by Robert Redford with Donald Sutherland (1980).srt", None),
         ("Movie.2010.1080p.srt", None),
+        (
+            "Deep.Red.1975.REMASTERED.DC.ITALIAN.1080p.BluRay.H264.AAC-fr.srt",
+            "fr",
+        ),
+        ("Movie.2020.1080p.WEB-DL.x264-RARBG.srt", None),
+        (
+            "Dear.Zachary.A.Letter.2008.720p.WEB-DL.DD2.0.H.264.srt(1).srt",
+            None,
+        ),
     ],
 )
 def test_parse_subtitle_language(filename: str, language: str | None) -> None:

@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from conftest import BuildLibrary
-from organize_films.operations import FileOperation, Plan, SkipReason
+from organize_films.operations import DeletionReason, FileOperation, Plan, SkipReason
 from organize_films.planner import LibraryPlanner
 
 
@@ -22,6 +22,11 @@ def moves(plan: Plan) -> list[tuple[str, str]]:
     ]
 
 
+def deletions(plan: Plan) -> list[tuple[str, DeletionReason]]:
+    root = plan.library
+    return [(d.path.relative_to(root).as_posix(), d.reason) for d in plan.deletions]
+
+
 def skip_reasons(plan: Plan) -> list[SkipReason]:
     return [skip.reason for skip in plan.skips]
 
@@ -30,8 +35,8 @@ def test_canonical_library_yields_no_operation(build_library: BuildLibrary) -> N
     root = build_library(
         [
             "Ikiru (1952)/Ikiru (1952) [Criterion 1080p BluRay x265].mkv",
+            "Ikiru (1952)/Ikiru (1952).nfo",
             "Ikiru (1952)/Subs/Ikiru (1952).fr.srt",
-            "Ikiru (1952)/Subs/Ikiru (1952).nfo",
         ]
     )
 
@@ -69,7 +74,7 @@ def test_release_folder_is_renamed_after_its_contents(
             f"{folder}/{folder}.mkv",
             f"{folder}/The Act of Killing (2012) [Directors Cut 720p BluRay x264].mkv",
         ),
-        (f"{folder}/{folder}.nfo", f"{folder}/Subs/The Act of Killing (2012).nfo"),
+        (f"{folder}/{folder}.nfo", f"{folder}/The Act of Killing (2012).nfo"),
         (folder, "The Act of Killing (2012)"),
     ]
 
@@ -114,30 +119,43 @@ def test_loose_subtitle_next_to_video_moves_into_subs(
     ]
 
 
-def test_subtitles_in_subs_are_renamed_and_unknown_language_is_skipped(
+def test_subtitle_without_language_tag_defaults_to_french(
     build_library: BuildLibrary,
 ) -> None:
     root = build_library(
-        [
-            "Ordinary People (1980)/Subs/Ordinary.People.1980.fre.srt",
-            "Ordinary People (1980)/Subs/Ordinary People by Robert Redford (1980).srt",
-            "Ordinary People (1980)/Subs/random.nfo",
-        ]
+        ["Ordinary People (1980)/Subs/Ordinary People by Robert Redford (1980).srt"]
     )
 
     plan = plan_for(root)
 
     assert moves(plan) == [
         (
-            "Ordinary People (1980)/Subs/Ordinary.People.1980.fre.srt",
+            "Ordinary People (1980)/Subs/Ordinary People by Robert Redford (1980).srt",
             "Ordinary People (1980)/Subs/Ordinary People (1980).fr.srt",
-        ),
-        (
-            "Ordinary People (1980)/Subs/random.nfo",
-            "Ordinary People (1980)/Subs/Ordinary People (1980).nfo",
-        ),
+        )
     ]
-    assert skip_reasons(plan) == [SkipReason.LANGUAGE_NOT_FOUND]
+    assert plan.skips == []
+
+
+def test_nfo_next_to_the_video_stays_at_the_film_root(
+    build_library: BuildLibrary,
+) -> None:
+    root = build_library(["Film (2000)/Film.2000.1080p.nfo"])
+
+    assert moves(plan_for(root)) == [
+        ("Film (2000)/Film.2000.1080p.nfo", "Film (2000)/Film (2000).nfo")
+    ]
+
+
+def test_nfo_inside_subs_is_deleted_not_kept(build_library: BuildLibrary) -> None:
+    root = build_library(["Ordinary People (1980)/Subs/random.nfo"])
+
+    plan = plan_for(root)
+
+    assert plan.operations == []
+    assert deletions(plan) == [
+        ("Ordinary People (1980)/Subs/random.nfo", DeletionReason.UNRELIABLE_SUBS_NFO)
+    ]
 
 
 def test_info_txt_moves_into_subs(build_library: BuildLibrary) -> None:
@@ -172,10 +190,9 @@ def test_collection_children_are_organized_but_collection_folder_is_kept(
     ]
 
 
-def test_extras_and_featurettes_are_left_untouched(build_library: BuildLibrary) -> None:
+def test_extras_is_left_untouched(build_library: BuildLibrary) -> None:
     root = build_library(
         [
-            "Stalker (1979)/Featurettes/Interview from 2002 with Eduard Artemyev.mkv",
             "Eight and a Half (1963)/Extras/Trailer.mkv",
             "Eight and a Half (1963)/extras/Interview - Sandra Milo.mkv",
         ]
@@ -185,6 +202,34 @@ def test_extras_and_featurettes_are_left_untouched(build_library: BuildLibrary) 
 
     assert plan.is_empty
     assert plan.skips == []
+
+
+def test_featurettes_is_renamed_to_extras(build_library: BuildLibrary) -> None:
+    # Kodi's default add-on only ever looks for "Extras" — a "Featurettes"
+    # folder is otherwise silently invisible in the UI.
+    root = build_library(
+        ["Stalker (1979)/Featurettes/Interview from 2002 with Eduard Artemyev.mkv"]
+    )
+
+    plan = plan_for(root)
+
+    assert moves(plan) == [("Stalker (1979)/Featurettes", "Stalker (1979)/Extras")]
+
+
+def test_featurettes_is_skipped_when_extras_already_exists(
+    build_library: BuildLibrary,
+) -> None:
+    root = build_library(
+        [
+            "Stalker (1979)/Extras/Menu Art.mkv",
+            "Stalker (1979)/Featurettes/Interview from 2002 with Eduard Artemyev.mkv",
+        ]
+    )
+
+    plan = plan_for(root)
+
+    assert plan.is_empty
+    assert skip_reasons(plan) == [SkipReason.DESTINATION_TAKEN]
 
 
 def test_unknown_subdirectory_is_skipped(build_library: BuildLibrary) -> None:
@@ -335,7 +380,7 @@ def test_video_still_downloading_inside_a_folder_is_skipped_but_folder_still_ren
     plan = plan_for(root)
 
     assert moves(plan) == [
-        (f"{folder}/{folder}.nfo", f"{folder}/Subs/The Fugitive (1993).nfo"),
+        (f"{folder}/{folder}.nfo", f"{folder}/The Fugitive (1993).nfo"),
         (folder, "The Fugitive (1993)"),
     ]
     assert [s.reason for s in plan.skips] == [SkipReason.FILE_LOCKED]

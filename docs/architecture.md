@@ -11,7 +11,7 @@ this file is about *how*.
 ```mermaid
 flowchart LR
     CLI[cli.main] --> Planner[LibraryPlanner.plan]
-    Planner -->|reads disk| Plan[(Plan: operations + skips)]
+    Planner -->|reads disk| Plan[(Plan: operations + deletions + skips)]
     Planner --> Naming[naming.parse_media_name<br/>naming.parse_subtitle_language]
     Naming --> Quality[quality.extract_quality]
     Plan --> Report{--dry-run?}
@@ -19,23 +19,23 @@ flowchart LR
     Report -->|no| Confirm{--yes or user says y?}
     Confirm -->|no| Cancel[cancelled]
     Confirm -->|yes| Executor[PlanExecutor.apply]
-    Executor -->|moves / renames| Disk[(library)]
+    Executor -->|moves / renames / deletes nfo in Subs| Disk[(library)]
     Executor --> Result[ExecutionResult]
 ```
 
 ## Modules
 
-| Module              | Responsibility                                                                           | Touches disk?             |
-| ------------------- | ---------------------------------------------------------------------------------------- | ------------------------- |
-| `cli.py`            | argument parsing, confirmation prompt, exit codes                                        | no                        |
-| `logging_config.py` | console handler + JSONL file handler, default log path                                   | writes the log only       |
-| `constants.py`      | extensions, language codes and aliases, reserved folder names                            | no                        |
-| `quality.py`        | quality token vocabulary and `extract_quality()`                                         | no                        |
-| `naming.py`         | `FilmIdentity` (owns canonical names), `parse_media_name()`, `parse_subtitle_language()` | no                        |
-| `operations.py`     | `FileOperation`, `Skip`, `SkipReason` value objects and the `Plan` that collects them    | reads only (`exists()`)   |
-| `locks.py`          | `is_locked_for_writing()`: detects a file another process still has open                 | opens + closes only       |
-| `planner.py`        | `LibraryPlanner`: walks the tree and fills a `Plan`                                      | reads only                |
-| `executor.py`       | `PlanExecutor`: applies a `Plan`, returns an `ExecutionResult`                           | **yes** — the only writer |
+| Module              | Responsibility                                                                                                    | Touches disk?             |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------- |
+| `cli.py`            | argument parsing, confirmation prompt, exit codes                                                                 | no                        |
+| `logging_config.py` | console handler + JSONL file handler, default log path                                                            | writes the log only       |
+| `constants.py`      | extensions, language codes and aliases, reserved folder names                                                     | no                        |
+| `quality.py`        | quality token vocabulary and `extract_quality()`                                                                  | no                        |
+| `naming.py`         | `FilmIdentity` (owns canonical names), `parse_media_name()`, `parse_subtitle_language()`                          | no                        |
+| `operations.py`     | `FileOperation`, `Deletion`, `Skip`/`SkipReason`/`DeletionReason` value objects and the `Plan` that collects them | reads only (`exists()`)   |
+| `locks.py`          | `is_locked_for_writing()`: detects a file another process still has open                                          | opens + closes only       |
+| `planner.py`        | `LibraryPlanner`: walks the tree and fills a `Plan`                                                               | reads only                |
+| `executor.py`       | `PlanExecutor`: applies a `Plan`, returns an `ExecutionResult`                                                    | **yes** — the only writer |
 
 ## Key decisions
 
@@ -65,7 +65,7 @@ aiming at a claimed or existing destination becomes a `Skip` visible in
 the preview rather than an error discovered halfway through applying.
 The executor re-checks `exists()` right before each move as a last guard.
 
-### Never delete, never overwrite
+### Never overwrite; delete only through one narrow, explicit path
 
 `PlanExecutor` only calls `Path.rename` on a destination it has just
 verified to be free, and creates parent folders on demand. It deliberately
@@ -73,8 +73,19 @@ avoids `shutil.move`: when a source is locked (a file still being
 downloaded, for instance) `shutil.move` falls back to copy + delete, the
 delete fails, and a multi-gigabyte duplicate is left behind — observed on
 the very first real run. A rename is atomic on a single volume: it either
-happens or it does not. There is no code path that removes a file; a
-failed operation is reported and the source stays in place.
+happens or it does not.
+
+The only files ever removed are `.nfo` files already sitting in `Subs/`
+(always scraped by an unreliable metadata source — see
+[naming-convention.md](naming-convention.md)). This is modeled as its own
+value object, `Deletion` (`path` + `DeletionReason`), never as a
+`FileOperation` with no destination: a `Move` and a `Delete` are different
+actions with different risk profiles, and collapsing them into one type
+with an optional field would let a future change silently start deleting
+things the "never overwrite" review above never anticipated. `Plan.delete()`
+records it exactly like `Plan.add()` records a move — visible in the dry
+run before it happens — and `PlanExecutor._apply_deletion()` is the only
+method in the codebase that calls `Path.unlink()`.
 
 ### A file still downloading is a skip, not a failure
 

@@ -4,7 +4,7 @@ import pytest
 
 from conftest import BuildLibrary
 from organize_films.executor import PlanExecutor
-from organize_films.operations import Plan, SkipReason
+from organize_films.operations import DeletionReason, Plan, SkipReason
 from organize_films.planner import LibraryPlanner
 
 
@@ -65,7 +65,7 @@ def test_apply_reports_filesystem_errors_and_continues(
     assert all_files(root) == {"a.mkv", "c.mkv"}
 
 
-def test_apply_never_deletes_anything(build_library: BuildLibrary) -> None:
+def test_apply_leaves_unrelated_files_untouched(build_library: BuildLibrary) -> None:
     root = build_library(
         [
             "The.Square.2013.1080p.WEBRip.x264-Absinth/The.Square.2013.1080p.WEBRip.x264-Absinth.mkv",
@@ -79,6 +79,40 @@ def test_apply_never_deletes_anything(build_library: BuildLibrary) -> None:
     PlanExecutor(LibraryPlanner(root).plan()).apply()
 
     assert len(all_files(root)) == before
+
+
+def test_apply_deletes_an_nfo_scraped_into_subs(build_library: BuildLibrary) -> None:
+    root = build_library(
+        ["Film (2000)/Film (2000) [1080p].mkv", "Film (2000)/Subs/scraped.nfo"]
+    )
+    plan = Plan(root)
+    plan.delete(
+        root / "Film (2000)" / "Subs" / "scraped.nfo",
+        DeletionReason.UNRELIABLE_SUBS_NFO,
+    )
+
+    result = PlanExecutor(plan).apply()
+
+    assert result.deleted == 1
+    assert result.failed == ()
+    assert all_files(root) == {"Film (2000)/Film (2000) [1080p].mkv"}
+
+
+def test_apply_reports_a_deletion_failure_without_touching_other_files(
+    build_library: BuildLibrary,
+) -> None:
+    root = build_library(["Film (2000)/Subs/scraped.nfo"])
+    plan = Plan(root)
+    plan.delete(
+        root / "Film (2000)" / "Subs" / "vanished.nfo",
+        DeletionReason.UNRELIABLE_SUBS_NFO,
+    )
+
+    result = PlanExecutor(plan).apply()
+
+    assert result.deleted == 0
+    assert [f.reason for f in result.failed] == [SkipReason.FILESYSTEM_ERROR]
+    assert all_files(root) == {"Film (2000)/Subs/scraped.nfo"}
 
 
 def test_applying_a_plan_makes_the_library_canonical(
@@ -99,7 +133,7 @@ def test_applying_a_plan_makes_the_library_canonical(
     assert all_files(root) == {
         "The Square (2013)/The Square (2013) [1080p WEBRip x264].mkv",
         "The Square (2013)/Subs/The Square (2013).fr.srt",
-        "The Square (2013)/Subs/The Square (2013).nfo",
+        "The Square (2013)/The Square (2013).nfo",
         "Loose (2001)/Loose (2001) [720p].mkv",
     }
     assert LibraryPlanner(root).plan().is_empty

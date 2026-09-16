@@ -1,8 +1,9 @@
 """Application of a :class:`~organize_films.operations.Plan` to the filesystem.
 
-The executor only ever moves or renames. It never deletes and never
-overwrites: a destination that appeared since planning is reported and the
-source stays where it is.
+The executor only ever moves, renames, or — for the single, explicit
+:class:`~organize_films.operations.Deletion` category the planner emits —
+deletes a file. It never overwrites: a destination that appeared since
+planning is reported and the source stays where it is.
 """
 
 import logging
@@ -10,7 +11,7 @@ import os
 from dataclasses import dataclass
 
 from organize_films.locks import SHARING_VIOLATION_WINERROR
-from organize_films.operations import FileOperation, Plan, Skip, SkipReason
+from organize_films.operations import Deletion, FileOperation, Plan, Skip, SkipReason
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +27,7 @@ class ExecutionResult:
     """
 
     applied: int
+    deleted: int
     failed: tuple[Skip, ...]
 
 
@@ -47,23 +49,43 @@ class PlanExecutor:
         self._plan = plan
 
     def apply(self) -> ExecutionResult:
-        """Run every operation of the plan and return the summary.
+        """Run every operation and deletion of the plan and return the summary.
 
         Returns:
-            The number of applied operations and the ones that failed, each
-            with the reason (destination taken at apply time, or an OS error).
+            How many moves and deletions succeeded, and which of either
+            failed, with the reason (destination taken at apply time, an
+            OS error, or a file locked by another process).
         """
         applied = 0
         failed: list[Skip] = []
         for operation in self._plan.operations:
-            failure = self._apply_one(operation)
+            failure = self._apply_move(operation)
             if failure is None:
                 applied += 1
             else:
                 failed.append(failure)
-        return ExecutionResult(applied, tuple(failed))
+        deleted = 0
+        for deletion in self._plan.deletions:
+            failure = self._apply_deletion(deletion)
+            if failure is None:
+                deleted += 1
+            else:
+                failed.append(failure)
+        return ExecutionResult(applied, deleted, tuple(failed))
 
-    def _apply_one(self, operation: FileOperation) -> Skip | None:
+    def _apply_deletion(self, deletion: Deletion) -> Skip | None:
+        ctx = {"path": str(deletion.path)}
+        try:
+            deletion.path.unlink()
+        except OSError as error:
+            logger.error(
+                "filesystem error", extra={"ctx": {**ctx, "error": str(error)}}
+            )
+            return Skip(deletion.path, SkipReason.FILESYSTEM_ERROR)
+        logger.debug("deleted", extra={"ctx": ctx})
+        return None
+
+    def _apply_move(self, operation: FileOperation) -> Skip | None:
         source, destination = operation.source, operation.destination
         ctx = {"source": str(source), "destination": str(destination)}
         if destination.exists() and not _is_case_only_rename(operation):

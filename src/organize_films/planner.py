@@ -5,9 +5,11 @@ from pathlib import Path
 
 from organize_films.constants import (
     COLLECTION_SUFFIX,
+    DEFAULT_SUBTITLE_LANGUAGE,
+    EXTRAS_DIRECTORY_NAME,
+    FEATURETTES_DIRECTORY_NAME,
     INFO_FILE_NAME,
     NFO_EXTENSION,
-    PRESERVED_DIRECTORIES,
     SUBTITLE_EXTENSIONS,
     SUBTITLES_DIRECTORY,
     VIDEO_EXTENSIONS,
@@ -18,7 +20,7 @@ from organize_films.naming import (
     parse_media_name,
     parse_subtitle_language,
 )
-from organize_films.operations import Plan, SkipReason
+from organize_films.operations import DeletionReason, Plan, SkipReason
 
 logger = logging.getLogger(__name__)
 
@@ -117,7 +119,10 @@ class LibraryPlanner:
             elif extension in SUBTITLE_EXTENSIONS:
                 self._plan_subtitle(entry, subtitles_dir, identity, plan)
             elif extension == NFO_EXTENSION:
-                plan.add(entry, subtitles_dir / identity.nfo_name())
+                # Kept next to the video, not moved into Subs/: an nfo here
+                # came with the release itself, unlike one scraped into
+                # Subs/ by an unreliable metadata source (see below).
+                plan.add(entry, folder / identity.nfo_name())
             elif entry.name.lower() == INFO_FILE_NAME:
                 plan.add(entry, subtitles_dir / INFO_FILE_NAME)
 
@@ -125,8 +130,11 @@ class LibraryPlanner:
         self, folder: Path, identity: FilmIdentity, plan: Plan
     ) -> None:
         name = folder.name.lower()
-        if name in PRESERVED_DIRECTORIES:
+        if name == EXTRAS_DIRECTORY_NAME.lower():
             logger.info("  keep    %s/", folder.name)
+        elif name == FEATURETTES_DIRECTORY_NAME:
+            # Kodi's default add-on only ever looks for "Extras".
+            plan.add(folder, folder.parent / EXTRAS_DIRECTORY_NAME)
         elif name == SUBTITLES_DIRECTORY.lower():
             self._plan_subtitles_folder(folder, identity, plan)
         else:
@@ -156,14 +164,22 @@ class LibraryPlanner:
             if extension in SUBTITLE_EXTENSIONS:
                 self._plan_subtitle(entry, subtitles_dir, identity, plan)
             elif extension == NFO_EXTENSION:
-                plan.add(entry, subtitles_dir / identity.nfo_name())
+                # Unlike an nfo shipped next to the video, one already
+                # sitting in Subs/ only ever comes from a scraper — not
+                # worth keeping, see DeletionReason.UNRELIABLE_SUBS_NFO.
+                plan.delete(entry, DeletionReason.UNRELIABLE_SUBS_NFO)
 
     def _plan_subtitle(
         self, subtitle: Path, subtitles_dir: Path, identity: FilmIdentity, plan: Plan
     ) -> None:
         language = parse_subtitle_language(subtitle.name)
         if language is None:
-            plan.skip(subtitle, SkipReason.LANGUAGE_NOT_FOUND)
-            return
+            language = DEFAULT_SUBTITLE_LANGUAGE
+            logger.warning(
+                "  assume  %s  -> %s (no language tag in name)",
+                plan.relative(subtitle),
+                language,
+                extra={"ctx": {"path": str(subtitle), "assumed_language": language}},
+            )
         name = identity.subtitle_name(language, subtitle.suffix.lower())
         plan.add(subtitle, subtitles_dir / name)

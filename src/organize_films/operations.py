@@ -18,12 +18,22 @@ class SkipReason(StrEnum):
     """Why an entry of the library was left untouched."""
 
     YEAR_NOT_FOUND = "year not found in name"
-    LANGUAGE_NOT_FOUND = "subtitle language not found in name"
     UNKNOWN_SUBDIRECTORY = "unexpected sub-folder inside a film folder"
     ORPHAN_FILE = "subtitle or nfo without a film folder"
     DESTINATION_TAKEN = "destination already exists or is claimed by another entry"
     FILE_LOCKED = "file is open by another process (likely still downloading)"
     FILESYSTEM_ERROR = "the filesystem refused the operation"
+
+
+class DeletionReason(StrEnum):
+    """Why a file is permanently removed rather than kept or renamed.
+
+    Deletion is a narrow, explicit exception to the "never delete" rule that
+    otherwise governs this project (see CLAUDE.md) — every member here must
+    describe a file that is never worth keeping, not merely unwanted this once.
+    """
+
+    UNRELIABLE_SUBS_NFO = "nfo scraped into Subs/ by an unreliable source"
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,6 +42,14 @@ class Skip:
 
     path: Path
     reason: SkipReason
+
+
+@dataclass(frozen=True, slots=True)
+class Deletion:
+    """A file that will be permanently removed, with the reason."""
+
+    path: Path
+    reason: DeletionReason
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,22 +72,24 @@ def _normalized(path: Path) -> str:
 
 @dataclass(slots=True)
 class Plan:
-    """Ordered operations and skips computed for one library, never applied here.
+    """Ordered operations, deletions and skips computed for one library.
 
-    Operations are ordered bottom-up: everything inside a folder is listed
-    before the folder's own rename, and each one uses the paths as they are
-    on disk *now*, so no operation depends on a previous one succeeding.
+    Nothing here is applied: this is a decision record only. Operations are
+    ordered bottom-up: everything inside a folder is listed before the
+    folder's own rename, and each one uses the paths as they are on disk
+    *now*, so no operation depends on a previous one succeeding.
     """
 
     library: Path
     operations: list[FileOperation] = field(default_factory=list)
+    deletions: list[Deletion] = field(default_factory=list)
     skips: list[Skip] = field(default_factory=list)
     _claimed: set[str] = field(default_factory=set, init=False, repr=False)
 
     @property
     def is_empty(self) -> bool:
         """Whether the library already matches the convention."""
-        return not self.operations
+        return not self.operations and not self.deletions
 
     def relative(self, path: Path) -> str:
         """Return ``path`` relative to the library, for human-readable output."""
@@ -99,6 +119,16 @@ class Plan:
             self.relative(source),
             target,
             extra={"ctx": {"source": str(source), "destination": str(destination)}},
+        )
+
+    def delete(self, path: Path, reason: DeletionReason) -> None:
+        """Record that ``path`` will be permanently removed because of ``reason``."""
+        self.deletions.append(Deletion(path, reason))
+        logger.warning(
+            "  delete  %s  (%s)",
+            self.relative(path),
+            reason,
+            extra={"ctx": {"path": str(path), "reason": reason.name}},
         )
 
     def skip(self, path: Path, reason: SkipReason) -> None:

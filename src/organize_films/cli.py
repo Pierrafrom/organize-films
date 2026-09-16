@@ -26,8 +26,10 @@ def _build_parser() -> argparse.ArgumentParser:
         prog="organize-films",
         description=(
             "Rename and organize a film library into 'Title (Year)/Title (Year) "
-            "[Quality].ext' with subtitles and .nfo files under Subs/. The plan "
-            "is always previewed first; nothing is ever deleted."
+            "[Quality].ext' with subtitles under Subs/. The plan is always "
+            "previewed first. The only files ever deleted are .nfo files "
+            "already sitting in Subs/ (always scraped, never worth keeping) "
+            "— everything else is only moved or renamed."
         ),
         epilog=(
             "examples:\n"
@@ -85,8 +87,11 @@ def _make_stdout_unicode_safe() -> None:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 
-def _confirm(operation_count: int) -> bool:
-    answer = input(f"Apply {operation_count} operation(s)? [y/N] ").strip().lower()
+def _confirm(operation_count: int, deletion_count: int) -> bool:
+    prompt = f"Apply {operation_count} operation(s)"
+    if deletion_count:
+        prompt += f" and delete {deletion_count} file(s)"
+    answer = input(f"{prompt}? [y/N] ").strip().lower()
     return answer in _YES_ANSWERS
 
 
@@ -100,18 +105,24 @@ def _report_plan(plan: Plan) -> None:
     downloading, other_skips = _split_locked(plan.skips)
     logger.info("")
     logger.info(
-        "Planned: %d operation(s), %d still downloading, %d skipped.",
+        "Planned: %d operation(s), %d deletion(s), %d still downloading, %d skipped.",
         len(plan.operations),
+        len(plan.deletions),
         len(downloading),
         len(other_skips),
         extra={
             "ctx": {
                 "operations": len(plan.operations),
+                "deletions": len(plan.deletions),
                 "downloading": len(downloading),
                 "skips": len(other_skips),
             }
         },
     )
+    for deletion in plan.deletions:
+        logger.warning(
+            "  will delete  %s  (%s)", plan.relative(deletion.path), deletion.reason
+        )
     for skip in downloading:
         logger.info("  waiting  %s  (%s)", plan.relative(skip.path), skip.reason)
     for skip in other_skips:
@@ -122,13 +133,15 @@ def _apply(plan: Plan) -> int:
     result = PlanExecutor(plan).apply()
     downloading, real_failures = _split_locked(result.failed)
     logger.info(
-        "Applied %d operation(s), %d still downloading, %d failed.",
+        "Applied %d operation(s), deleted %d file(s), %d still downloading, %d failed.",
         result.applied,
+        result.deleted,
         len(downloading),
         len(real_failures),
         extra={
             "ctx": {
                 "applied": result.applied,
+                "deleted": result.deleted,
                 "downloading": len(downloading),
                 "failed": len(real_failures),
             }
@@ -168,7 +181,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         logger.info("Nothing to do: the library is already organized.")
     elif args.dry_run:
         logger.info("Dry run: nothing was changed.")
-    elif args.yes or _confirm(len(plan.operations)):
+    elif args.yes or _confirm(len(plan.operations), len(plan.deletions)):
         exit_code = _apply(plan)
     else:
         logger.info("Cancelled: nothing was changed.")

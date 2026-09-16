@@ -148,7 +148,7 @@ def test_apply_failures_return_exit_code_one(
 
         def apply(self) -> ExecutionResult:
             failed = Skip(self._plan.operations[0].source, SkipReason.FILESYSTEM_ERROR)
-            return ExecutionResult(applied=0, failed=(failed,))
+            return ExecutionResult(applied=0, deleted=0, failed=(failed,))
 
     monkeypatch.setattr(cli, "PlanExecutor", FailingExecutor)
 
@@ -173,7 +173,7 @@ def test_file_still_downloading_does_not_fail_the_run(
         def apply(self) -> ExecutionResult:
             skip = Skip(self._plan.operations[0].source, SkipReason.FILE_LOCKED)
             return ExecutionResult(
-                applied=len(self._plan.operations) - 1, failed=(skip,)
+                applied=len(self._plan.operations) - 1, deleted=0, failed=(skip,)
             )
 
     monkeypatch.setattr(cli, "PlanExecutor", DownloadingExecutor)
@@ -182,6 +182,43 @@ def test_file_still_downloading_does_not_fail_the_run(
 
     assert code == 0
     assert "still downloading" in capsys.readouterr().out
+
+
+def test_yes_deletes_an_nfo_scraped_into_subs(
+    build_library: BuildLibrary, log_file: Path, no_prompt: None
+) -> None:
+    root = build_library(
+        ["Film (2000)/Film (2000) [1080p].mkv", "Film (2000)/Subs/scraped.nfo"]
+    )
+
+    code = cli.main([str(root), "--yes", "--log-file", str(log_file)])
+
+    assert code == 0
+    assert all_files(root) == {"Film (2000)/Film (2000) [1080p].mkv"}
+
+
+def test_confirmation_prompt_mentions_pending_deletions(
+    build_library: BuildLibrary, log_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = build_library(
+        ["Film (2000)/Film (2000) [1080p].mkv", "Film (2000)/Subs/scraped.nfo"]
+    )
+    prompts: list[str] = []
+
+    def _decline(prompt: str = "") -> str:
+        prompts.append(prompt)
+        return "n"
+
+    monkeypatch.setattr("builtins.input", _decline)
+
+    code = cli.main([str(root), "--log-file", str(log_file)])
+
+    assert code == 0
+    assert "delete 1 file(s)" in prompts[0]
+    assert all_files(root) == {
+        "Film (2000)/Film (2000) [1080p].mkv",
+        "Film (2000)/Subs/scraped.nfo",
+    }
 
 
 def test_module_entry_point_delegates_to_main(monkeypatch: pytest.MonkeyPatch) -> None:

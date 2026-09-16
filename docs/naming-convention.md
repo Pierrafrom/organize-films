@@ -10,27 +10,26 @@ how release names are interpreted. The code that enforces it lives in
 Films/
 ├── Title (Year)/
 │   ├── Title (Year) [Quality].mkv
+│   ├── Title (Year).nfo
 │   ├── Subs/
 │   │   ├── Title (Year).fr.srt
 │   │   ├── Title (Year).en.srt
-│   │   ├── Title (Year).nfo
 │   │   └── info.txt
-│   ├── Extras/          # left untouched
-│   └── Featurettes/     # left untouched
+│   └── Extras/           # left untouched — a "Featurettes" folder is renamed here
 └── Series Name (Collection)/
     ├── Title (Year)/...
     └── Title 2 (Year)/...
 ```
 
-| Element                   | Rule                                                                                                |
-| ------------------------- | --------------------------------------------------------------------------------------------------- |
-| Film folder               | `Title (Year)` — nothing else in the name                                                           |
-| Video                     | `Title (Year) [Quality].ext`, brackets omitted when no quality is known                             |
-| Subtitle                  | `Subs/Title (Year).<lang>.ext` — original extension kept (`.srt`, `.sub`, `.ass`, `.ssa`)           |
-| NFO                       | `Subs/Title (Year).nfo`                                                                             |
-| `info.txt`                | moved to `Subs/info.txt` as is                                                                      |
-| Collection                | a folder ending in `(Collection)` holds film folders; the collection folder itself is never renamed |
-| `Extras/`, `Featurettes/` | preserved verbatim (case-insensitive match)                                                         |
+| Element     | Rule                                                                                                     |
+| ----------- | -------------------------------------------------------------------------------------------------------- |
+| Film folder | `Title (Year)` — nothing else in the name                                                                |
+| Video       | `Title (Year) [Quality].ext`, brackets omitted when no quality is known                                  |
+| Subtitle    | `Subs/Title (Year).<lang>.ext` — original extension kept (`.srt`, `.sub`, `.ass`, `.ssa`)                |
+| NFO         | kept next to the video, renamed to `Title (Year).nfo` — never moved into `Subs/` (see below)             |
+| `info.txt`  | moved to `Subs/info.txt` as is                                                                           |
+| Collection  | a folder ending in `(Collection)` holds film folders; the collection folder itself is never renamed      |
+| `Extras/`   | preserved verbatim (case-insensitive match); a `Featurettes/` folder is renamed to `Extras/` (see below) |
 
 Hidden entries (`.name`), `Thumbs.db`, `desktop.ini`, `$RECYCLE.BIN` and
 `System Volume Information` are ignored everywhere.
@@ -75,7 +74,9 @@ folder name (`Some Film (2001) (1080p BluRay x265 Tigole)/Some Film (2001).mkv`
 ## Subtitle languages
 
 The language is read from the last dotted or underscored segment of the
-stem (`.fr.srt`, `_fr.srt`, `.FR.srt`):
+stem (`.fr.srt`, `_fr.srt`, `.FR.srt`), or, failing that, the last
+hyphen-separated segment (`...AAC-fr.srt`) — tried last because a hyphen
+also shows up inside ordinary release tags (`WEB-DL`):
 
 | Recognized                  | Examples                                                            |
 | --------------------------- | ------------------------------------------------------------------- |
@@ -84,16 +85,34 @@ stem (`.fr.srt`, `_fr.srt`, `.FR.srt`):
 | Full names (English/French) | `Francais`, `french`, `english`, `espagnol`, ...                    |
 | Scene shorthands            | `VF`, `VFF` → `fr`                                                  |
 
-A subtitle whose language cannot be determined is skipped and reported —
-it is never renamed to a guessed language.
+**A subtitle with no recognizable language tag is assumed to be French**
+(`DEFAULT_SUBTITLE_LANGUAGE` in `constants.py`) rather than left unrenamed
+— deliberately optimistic for a French-speaking library. The assumption is
+always logged (`assume ... -> fr (no language tag in name)`, WARNING
+level) so it stays visible in the plan; keep every non-French subtitle's
+tag intact, since a missing one is silently relabeled `fr`.
+
+## Featurettes → Extras
+
+Kodi's default Extras add-on only ever looks for a folder literally named
+`Extras` — even with the add-on installed, only one folder name is
+configurable at a time, so a `Featurettes/` folder never shows up. It is
+therefore renamed to `Extras/` on sight. If both already exist in the same
+film folder, the rename is skipped as a `DESTINATION_TAKEN` conflict
+(never silently merged) and reported for manual resolution.
 
 ## What is never done
 
-- Nothing is deleted. Ever.
+- **Nothing is deleted, with one narrow, explicit exception**: an `.nfo`
+  file already sitting in `Subs/` is always scraped by an unreliable
+  metadata source, never shipped with the release itself — it is removed
+  rather than renamed. An `.nfo` next to the video is never touched this
+  way; it is kept (and canonicalized in place). Every deletion is listed
+  in the preview before it happens, exactly like a move.
 - Nothing is overwritten: if a destination already exists on disk, or two
   entries would map to the same destination, the later one is skipped and
   reported in the preview.
-- `Extras/` and `Featurettes/` contents are never parsed or renamed.
+- `Extras/` contents are never parsed or renamed.
 
 ## A video still downloading
 

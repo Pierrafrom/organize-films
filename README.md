@@ -5,18 +5,19 @@
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)](https://github.com/Pierrafrom/organize-films)
 [![Checks](https://img.shields.io/badge/ruff%20%7C%20mypy%20--strict%20%7C%20pytest-passing-brightgreen)](pyproject.toml)
 
-Rename and organize a film library into a strict, media-server-friendly
-layout — `Title (Year)/Title (Year) [Quality].mkv` with subtitles and
-`.nfo` files under `Subs/`. The plan is always previewed before anything
-moves, and nothing is ever deleted.
+Rename and organize a film library into a strict, Kodi-friendly layout —
+`Title (Year)/Title (Year) [Quality].mkv` with subtitles under `Subs/`.
+The plan is always previewed before anything moves. The only files ever
+deleted are `.nfo` files already scraped into `Subs/`; everything else is
+only moved or renamed.
 
 ```text
 Films/
 └── The Square (2013)/
     ├── The Square (2013) [1080p WEBRip x264 DD5.1].mkv
+    ├── The Square (2013).nfo
     └── Subs/
-        ├── The Square (2013).fr.srt
-        └── The Square (2013).nfo
+        └── The Square (2013).fr.srt
 ```
 
 Full rules (collections, extras, quality tokens, languages) in
@@ -77,11 +78,11 @@ folder  The.Square.2013.1080p.WEBRip.x264-Absinth/
   rename  The.Square.2013.1080p.WEBRip.x264-Absinth/The.Square.2013.1080p.WEBRip.x264-Absinth.mkv  ->  The Square (2013) [1080p WEBRip x264].mkv
   rename  The.Square.2013.1080p.WEBRip.x264-Absinth  ->  The Square (2013)
 folder  Stalker (1979)/
-  keep    Featurettes/
-  skip    Stalker (1979)/Subs/unknown.srt  (subtitle language not found in name)
+  rename  Stalker (1979)/Featurettes  ->  Extras
+  delete  Stalker (1979)/Subs/scraped.nfo  (nfo scraped into Subs/ by an unreliable source)
 
-Planned: 3 operation(s), 1 skipped.
-Apply 3 operation(s)? [y/N]
+Planned: 4 operation(s), 1 deletion(s), 0 still downloading, 0 skipped.
+Apply 4 operation(s) and delete 1 file(s)? [y/N]
 ```
 
 ## Logs
@@ -121,7 +122,7 @@ src/organize_films/
 ├── constants.py        # extensions, language codes, reserved folder names
 ├── quality.py          # quality token vocabulary, extract_quality()
 ├── naming.py           # FilmIdentity, parse_media_name(), parse_subtitle_language()
-├── operations.py       # FileOperation / Skip value objects, Plan
+├── operations.py       # FileOperation / Deletion / Skip value objects, Plan
 ├── planner.py          # LibraryPlanner — read-only walk producing a Plan
 └── executor.py         # PlanExecutor — the only module that writes to disk
 tests/                  # pytest suite, parametrized over real release names
